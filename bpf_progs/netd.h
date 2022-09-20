@@ -117,13 +117,13 @@ STRUCT_SIZE(PacketTrace, 8+4+4 + 4+4 + 2+2 + 1+1+1+1);
 
 // 'static' - otherwise these constants end up in .rodata in the resulting .o post compilation
 static const int COOKIE_UID_MAP_SIZE = 10000;
-static const int UID_COUNTERSET_MAP_SIZE = 4000;
+static const int UID_COUNTERSET_MAP_SIZE = 40000;
 static const int APP_STATS_MAP_SIZE = 10000;
 static const int STATS_MAP_SIZE = 5000;
 static const int IFACE_INDEX_NAME_MAP_SIZE = 1000;
 static const int IFACE_STATS_MAP_SIZE = 1000;
 static const int CONFIGURATION_MAP_SIZE = 2;
-static const int UID_OWNER_MAP_SIZE = 4000;
+static const int UID_OWNER_MAP_SIZE = 40000;
 static const int INGRESS_DISCARD_MAP_SIZE = 100;
 static const int PACKET_TRACE_BUF_SIZE = 32 * 1024;
 static const int DATA_SAVER_ENABLED_MAP_SIZE = 1;
@@ -247,6 +247,9 @@ STRUCT_SIZE(IngressDiscardValue, 2 * 4);  // 8
 // DROP_IF_UNSET is set of rules that should DROP if globally enabled, and per-uid bit is NOT set
 #define DROP_IF_UNSET (DOZABLE_MATCH | POWERSAVE_MATCH | RESTRICTED_MATCH \
                         | LOW_POWER_STANDBY_MATCH | BACKGROUND_MATCH)
+
+#define FIREWALL_DROP_IF_SET (OEM_DENY_1_MATCH)
+#define FIREWALL_DROP_IF_UNSET (RESTRICTED_MATCH)
 
 // Warning: funky bit-wise arithmetic: in parallel, for all DROP_IF_SET/UNSET rules
 // check whether the rules are globally enabled, and if so whether the rules are

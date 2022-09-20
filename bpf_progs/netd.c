@@ -369,6 +369,7 @@ static __always_inline inline BpfConfig getConfig(uint32_t configKey) {
     return *config;
 }
 
+
 static __always_inline inline bool ingress_should_discard(struct __sk_buff* skb,
                                                           const struct kver_uint kver) {
     // Require 4.19, since earlier kernels don't have bpf_skb_load_bytes_relative() which
@@ -396,6 +397,21 @@ static __always_inline inline bool ingress_should_discard(struct __sk_buff* skb,
     if (skb->ifindex == v->iif[0]) return false;  // allowed interface
     if (skb->ifindex == v->iif[1]) return false;  // allowed interface
     return true;  // disallowed interface
+}
+
+static __always_inline inline int bpf_owner_firewall_match(uint32_t uid) {
+    if (is_system_uid(uid)) return PASS;
+
+    const BpfConfig enabledRules = getConfig(UID_RULES_CONFIGURATION_KEY);
+    const UidOwnerValue* uidEntry = bpf_uid_owner_map_lookup_elem(&uid);
+    const uint32_t uidRules = uidEntry ? uidEntry->rule : 0;
+
+    if (enabledRules & (FIREWALL_DROP_IF_SET | FIREWALL_DROP_IF_UNSET)
+            & (uidRules ^ FIREWALL_DROP_IF_UNSET)) {
+        return DROP;
+    }
+
+    return PASS;
 }
 
 static __always_inline inline int bpf_owner_match(struct __sk_buff* skb, uint32_t uid,
@@ -637,15 +653,14 @@ DEFINE_XTBPF_PROG("skfilter/denylist/xtbpf", AID_ROOT, AID_NET_ADMIN, xt_bpf_den
     return BPF_NOMATCH;
 }
 
-static __always_inline inline uint8_t get_app_permissions() {
-    uint64_t gid_uid = bpf_get_current_uid_gid();
+static __always_inline inline uint8_t get_app_permissions(uint32_t uid) {
     /*
      * A given app is guaranteed to have the same app ID in all the profiles in
      * which it is installed, and install permission is granted to app for all
      * user at install time so we only check the appId part of a request uid at
      * run time. See UserHandle#isSameApp for detail.
      */
-    uint32_t appId = (gid_uid & 0xffffffff) % AID_USER_OFFSET;  // == PER_USER_RANGE == 100000
+    uint32_t appId = uid % AID_USER_OFFSET;  // == PER_USER_RANGE == 100000
     uint8_t* permissions = bpf_uid_permission_map_lookup_elem(&appId);
     // if UID not in map, then default to just INTERNET permission.
     return permissions ? *permissions : BPF_PERMISSION_INTERNET;
@@ -654,8 +669,13 @@ static __always_inline inline uint8_t get_app_permissions() {
 DEFINE_NETD_BPF_PROG_KVER("cgroupsock/inet/create", AID_ROOT, AID_ROOT, inet_socket_create,
                           KVER_4_14)
 (struct bpf_sock* sk) {
+    uint64_t uid = bpf_get_current_uid_gid() & 0xffffffff;
     // A return value of 1 means allow, everything else means deny.
-    return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? 1 : 0;
+    if (get_app_permissions(uid) & BPF_PERMISSION_INTERNET) {
+      return bpf_owner_firewall_match(uid) == PASS ? 1 : 0;
+    } else {
+      return 0;
+    }
 }
 
 LICENSE("Apache 2.0");
